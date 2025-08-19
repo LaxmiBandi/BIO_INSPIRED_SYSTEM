@@ -1,0 +1,89 @@
+import numpy as np
+from sklearn.datasets import load_iris
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import random
+
+# Load dataset
+data = load_iris()
+X = data.data
+y = data.target
+num_features = X.shape[1]
+
+# Split data for fitness evaluation
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.3, random_state=42)
+
+# GA parameters
+population_size = 10
+generations = 20
+mutation_rate = 0.1
+crossover_rate = 0.8
+
+# Initialize population: Each individual is a binary mask for features
+def create_population(size, num_features):
+    return [np.random.randint(0, 2, num_features) for _ in range(size)]
+
+# Fitness function: accuracy of classifier on selected features
+def fitness(individual):
+    if np.count_nonzero(individual) == 0:  # No features selected
+        return 0
+    X_train_sel = X_train[:, individual==1]
+    X_val_sel = X_val[:, individual==1]
+    clf = DecisionTreeClassifier()
+    clf.fit(X_train_sel, y_train)
+    y_pred = clf.predict(X_val_sel)
+    return accuracy_score(y_val, y_pred)
+
+# Selection: roulette wheel selection based on fitness
+def selection(pop, fitnesses):
+    total_fitness = sum(fitnesses)
+    probs = [f/total_fitness for f in fitnesses]
+    selected_idx = np.random.choice(len(pop), size=2, replace=False, p=probs)
+    return pop[selected_idx[0]], pop[selected_idx[1]]
+
+# Crossover: single point crossover
+def crossover(parent1, parent2):
+    if random.random() > crossover_rate:
+        return parent1.copy(), parent2.copy()
+    point = random.randint(1, num_features-1)
+    child1 = np.concatenate([parent1[:point], parent2[point:]])
+    child2 = np.concatenate([parent2[:point], parent1[point:]])
+    return child1, child2
+
+# Mutation: flip bits with some probability
+def mutate(individual):
+    for i in range(len(individual)):
+        if random.random() < mutation_rate:
+            individual[i] = 1 - individual[i]
+
+# Main GA loop
+population = create_population(population_size, num_features)
+best_individual = None
+best_fitness = 0
+
+for gen in range(generations):
+    fitnesses = [fitness(ind) for ind in population]
+    
+    # Track best individual
+    max_fitness = max(fitnesses)
+    if max_fitness > best_fitness:
+        best_fitness = max_fitness
+        best_individual = population[fitnesses.index(max_fitness)].copy()
+    
+    new_population = []
+    
+    while len(new_population) < population_size:
+        parent1, parent2 = selection(population, fitnesses)
+        child1, child2 = crossover(parent1, parent2)
+        mutate(child1)
+        mutate(child2)
+        new_population.extend([child1, child2])
+    
+    population = new_population[:population_size]
+    
+    print(f"Generation {gen+1} Best Fitness: {best_fitness:.4f}")
+
+print("\nBest feature subset found:")
+print(best_individual)
+print(f"Number of features selected: {np.sum(best_individual)}")
