@@ -1,0 +1,128 @@
+import numpy as np
+import cv2
+import random
+import matplotlib.pyplot as plt
+
+# -------------------------
+# Step 1: Define fitness function
+# -------------------------
+def fitness_function(image, threshold):
+    """
+    Fitness = Between-class variance (Otsu style)
+    Higher is better
+    """
+    # Separate pixels
+    foreground = image[image > threshold]
+    background = image[image <= threshold]
+
+    if len(foreground) == 0 or len(background) == 0:
+        return 0
+
+    # Means
+    mean_fore = np.mean(foreground)
+    mean_back = np.mean(background)
+
+    # Probabilities
+    w_fore = len(foreground) / len(image.flatten())
+    w_back = len(background) / len(image.flatten())
+
+    # Between-class variance
+    fitness = w_fore * w_back * (mean_fore - mean_back) ** 2
+    return fitness
+
+# -------------------------
+# Step 2: Initialize population
+# -------------------------
+def initialize_population(pop_size, min_val, max_val):
+    return [random.randint(min_val, max_val) for _ in range(pop_size)]
+
+# -------------------------
+# Step 3: Selection
+# -------------------------
+def selection(population, fitnesses, k=3):
+    selected = []
+    # Ensure k is not larger than population
+    k = min(k, len(population))
+    for _ in range(len(population)):
+        participants = random.sample(list(zip(population, fitnesses)), k)
+        winner = max(participants, key=lambda x: x[1])
+        selected.append(winner[0])
+    return selected
+
+
+# -------------------------
+# Step 4: Crossover
+# -------------------------
+def crossover(parent1, parent2):
+    return (parent1 + parent2) // 2
+
+# -------------------------
+# Step 5: Mutation
+# -------------------------
+def mutation(gene, min_val, max_val, mutation_rate=0.1):
+    if random.random() < mutation_rate:
+        return random.randint(min_val, max_val)
+    return gene
+
+# -------------------------
+# Step 6: Gene Expression Algorithm
+# -------------------------
+def gene_expression_algorithm(image, pop_size=20, generations=50):
+    min_val, max_val = 0, 255
+    population = initialize_population(pop_size, min_val, max_val)
+
+    best_solution = None
+    best_fitness = -1
+
+    for gen in range(generations):
+        fitnesses = [fitness_function(image, ind) for ind in population]
+
+        # Track best
+        gen_best_idx = np.argmax(fitnesses)
+        if fitnesses[gen_best_idx] > best_fitness:
+            best_fitness = fitnesses[gen_best_idx]
+            best_solution = population[gen_best_idx]
+
+        # Selection
+        selected = selection(population, fitnesses)
+
+        # Crossover + Mutation
+        new_population = []
+        for i in range(0, len(selected), 2):
+            if i + 1 < len(selected):
+                child = crossover(selected[i], selected[i + 1])
+                child = mutation(child, min_val, max_val)
+                new_population.append(child)
+            else:
+                new_population.append(selected[i])
+
+        population = new_population
+
+    return best_solution, best_fitness
+
+# -------------------------
+# Example usage
+# -------------------------
+# Load grayscale image
+image = cv2.imread("./OIP.jpeg", 0)
+if image is None:
+    print("❌ Image not found. Check filename and path!")
+    exit()
+
+best_threshold, fitness = gene_expression_algorithm(image)
+
+# Apply threshold
+_, segmented = cv2.threshold(image, best_threshold, 255, cv2.THRESH_BINARY)
+
+print(f"Best Threshold Found: {best_threshold}, Fitness: {fitness}")
+
+# Show results
+plt.subplot(1,2,1)
+plt.title("Original Image")
+plt.imshow(image, cmap='gray')
+
+plt.subplot(1,2,2)
+plt.title("Segmented Image (GEA)")
+plt.imshow(segmented, cmap='gray')
+
+plt.show()
