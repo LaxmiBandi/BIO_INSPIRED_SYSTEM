@@ -1,0 +1,66 @@
+class TuringMachine:
+    def __init__(self, tape, start_state, accept_state, reject_state, transitions):
+        self.tape = list(tape) + ["_"]  # add blank at end
+        self.head = 0
+        self.state = start_state
+        self.accept_state = accept_state
+        self.reject_state = reject_state
+        self.transitions = transitions
+
+    def step(self):
+        symbol = self.tape[self.head]
+        key = (self.state, symbol)
+
+        if key not in self.transitions:
+            self.state = self.reject_state
+            return
+
+        new_state, new_symbol, direction = self.transitions[key]
+
+        # write symbol
+        self.tape[self.head] = new_symbol
+        # move head
+        if direction == "R":
+            self.head += 1
+        elif direction == "L":
+            self.head = max(0, self.head - 1)
+        # change state
+        self.state = new_state
+
+    def run(self):
+        while self.state not in [self.accept_state, self.reject_state]:
+            self.step()
+        return self.state == self.accept_state
+
+
+# Define states
+start_state = "q_even"
+accept_state = "q_accept"
+reject_state = "q_reject"
+
+# Define transitions
+transitions = {
+    # Even state
+    ("q_even", "0"): ("q_even", "0", "R"),
+    ("q_even", "1"): ("q_odd", "1", "R"),
+    ("q_even", "_"): ("q_accept", "_", "R"),
+
+    # Odd state
+    ("q_odd", "0"): ("q_odd", "0", "R"),
+    ("q_odd", "1"): ("q_even", "1", "R"),
+    ("q_odd", "_"): ("q_reject", "_", "R"),
+}
+
+# 🔹 User input
+binary_string = input("Enter a binar1y string (only 0s and 1s): ").strip()
+
+# Validate input
+if not all(c in "01" for c in binary_string):
+    print("Error: Input must be a binary string (only 0 and 1).")
+else:
+    tm = TuringMachine(binary_string, start_state, accept_state, reject_state, transitions)
+    result = tm.run()
+    if result:
+        print(f"String '{binary_string}' is ACCEPTED (even number of 1s).")
+    else:
+        print(f"String '{binary_string}' is REJECTED (odd number of 1s).")
