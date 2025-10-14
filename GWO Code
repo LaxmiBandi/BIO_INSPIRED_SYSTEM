@@ -1,0 +1,100 @@
+import numpy as np
+from sklearn.datasets import load_breast_cancer
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+
+# Load data
+data = load_breast_cancer()
+X = data.data
+y = data.target
+num_features = X.shape[1]
+
+# Split dataset
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+def fitness(position):
+    prob = sigmoid(position)
+    selected = prob > 0.5
+    if np.sum(selected) == 0:  # avoid empty set
+        return 1  # worst fitness
+    
+    X_train_sel = X_train[:, selected]
+    X_test_sel = X_test[:, selected]
+
+    clf = DecisionTreeClassifier()
+    clf.fit(X_train_sel, y_train)
+    y_pred = clf.predict(X_test_sel)
+    
+    error = 1 - accuracy_score(y_test, y_pred)
+    alpha, beta = 0.9, 0.1
+    return alpha * error + beta * (np.sum(selected) / num_features)
+
+num_wolves = 10
+max_iter = 20
+
+positions = np.random.uniform(-5, 5, (num_wolves, num_features))
+
+alpha_pos = np.zeros(num_features)
+alpha_score = float('inf')
+beta_pos = np.zeros(num_features)
+beta_score = float('inf')
+delta_pos = np.zeros(num_features)
+delta_score = float('inf')
+
+def update_position(X, A1, C1, A2, C2, A3, C3, Alpha_pos, Beta_pos, Delta_pos):
+    D_alpha = abs(C1 * Alpha_pos - X)
+    D_beta = abs(C2 * Beta_pos - X)
+    D_delta = abs(C3 * Delta_pos - X)
+    X1 = Alpha_pos - A1 * D_alpha
+    X2 = Beta_pos - A2 * D_beta
+    X3 = Delta_pos - A3 * D_delta
+    return (X1 + X2 + X3) / 3
+
+for t in range(max_iter):
+    a = 2 - t * (2 / max_iter)
+    for i in range(num_wolves):
+        positions[i] = np.clip(positions[i], -10, 10)
+        fit = fitness(positions[i])
+        if fit < alpha_score:
+            alpha_score = fit
+            alpha_pos = positions[i].copy()
+        elif fit < beta_score:
+            beta_score = fit
+            beta_pos = positions[i].copy()
+        elif fit < delta_score:
+            delta_score = fit
+            delta_pos = positions[i].copy()
+
+    for i in range(num_wolves):
+        for j in range(num_features):
+            r1, r2 = np.random.rand(), np.random.rand()
+            A1 = 2 * a * r1 - a
+            C1 = 2 * r2
+            r1, r2 = np.random.rand(), np.random.rand()
+            A2 = 2 * a * r1 - a
+            C2 = 2 * r2
+            r1, r2 = np.random.rand(), np.random.rand()
+            A3 = 2 * a * r1 - a
+            C3 = 2 * r2
+            positions[i, j] = update_position(
+                positions[i, j], A1, C1, A2, C2, A3, C3,
+                alpha_pos[j], beta_pos[j], delta_pos[j]
+            )
+
+best_prob = sigmoid(alpha_pos)
+best_features = best_prob > 0.5
+selected_features = np.where(best_features)[0]
+
+print("Selected feature indices:", selected_features)
+print(f"Number of features selected: {len(selected_features)}")
+print(f"Best fitness value: {alpha_score:.4f}")
+
+# Final evaluation with selected features
+clf = DecisionTreeClassifier()
+clf.fit(X_train[:, selected_features], y_train)
+accuracy = clf.score(X_test[:, selected_features], y_test)
+print(f"Accuracy with selected features: {accuracy:.4f}")
