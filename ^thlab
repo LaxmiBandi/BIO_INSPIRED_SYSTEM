@@ -1,0 +1,123 @@
+import numpy as np
+import pandas as pd
+
+# ---------------------------
+# Load Dataset
+# ---------------------------
+# Make sure your CSV file is named 'beam_dataset.csv' with the structure you provided
+data = pd.read_csv("beam_dataset.csv")
+
+# ---------------------------
+# Fitness Function
+# ---------------------------
+def beam_fitness(length, width, thickness, force, density, E, max_stress, max_deflection):
+    # Weight of the beam
+    weight = density * length * width * thickness
+    
+    # Moment of inertia for rectangular cross-section
+    I = (width * thickness**3) / 12
+    
+    # Cantilever beam deflection
+    deflection = (force * length**3) / (3 * E * I)
+    
+    # Stress (simplified for example)
+    stress = (force * length) / I
+    
+    # Penalize designs that violate constraints
+    penalty = 0
+    if deflection > max_deflection or stress > max_stress:
+        penalty = 1e6 * (max(deflection - max_deflection, 0) + max(stress - max_stress, 0))
+    
+    return weight + penalty
+
+# ---------------------------
+# PCA Parameters
+# ---------------------------
+M, N = 5, 5                # Grid size (5x5 = 25 cells)
+alpha = 0.5                # Attraction to best neighbor
+beta = 0.1                 # Random exploration factor
+max_iter = 100             # Number of iterations
+
+# ---------------------------
+# Initialize Cells from Dataset
+# ---------------------------
+cells = np.zeros((M, N, 3))  # Each cell has (Length, Width, Thickness)
+fitness = np.zeros((M, N))
+
+for i in range(M):
+    for j in range(N):
+        row = data.sample(n=1).iloc[0]  # Randomly pick a row
+        cells[i, j] = [row['Length'], row['Width'], row['Thickness']]
+        fitness[i, j] = beam_fitness(row['Length'], row['Width'], row['Thickness'],
+                                     row['Force'], row['Material_Density'], row['E'],
+                                     row['Max_Stress'], row['Max_Deflection'])
+
+# Track global best
+best_idx = np.unravel_index(np.argmin(fitness), fitness.shape)
+best_pos = cells[best_idx]
+best_fit = fitness[best_idx]
+
+# ---------------------------
+# Neighbor function (Moore neighborhood)
+# ---------------------------
+def get_neighbors(i, j):
+    neighbors = []
+    for di in [-1, 0, 1]:
+        for dj in [-1, 0, 1]:
+            if di == 0 and dj == 0:
+                continue
+            ni, nj = (i + di) % M, (j + dj) % N  # Wrap-around grid
+            neighbors.append((ni, nj))
+    return neighbors
+
+# ---------------------------
+# PCA Iterations
+# ---------------------------
+for iteration in range(max_iter):
+    new_cells = np.copy(cells)
+    
+    for i in range(M):
+        for j in range(N):
+            neighbors = get_neighbors(i, j)
+            
+            # Find best neighbor
+            best_n = min(neighbors, key=lambda n: fitness[n])
+            x_best, y_best, z_best = cells[best_n]
+            
+            # Update cell towards best neighbor + random exploration
+            x, y, z = cells[i, j]
+            x_new = x + alpha * (x_best - x) + beta * np.random.uniform(-0.01, 0.01)
+            y_new = y + alpha * (y_best - y) + beta * np.random.uniform(-0.001, 0.001)
+            z_new = z + alpha * (z_best - z) + beta * np.random.uniform(-0.001, 0.001)
+            
+            # Ensure variables stay within realistic bounds (based on dataset)
+            x_new = np.clip(x_new, data['Length'].min(), data['Length'].max())
+            y_new = np.clip(y_new, data['Width'].min(), data['Width'].max())
+            z_new = np.clip(z_new, data['Thickness'].min(), data['Thickness'].max())
+            
+            # Evaluate new fitness using nearest dataset row parameters (for Force, Density, etc.)
+            nearest = data.iloc[((data['Length'] - x_new)**2 + 
+                                 (data['Width'] - y_new)**2 + 
+                                 (data['Thickness'] - z_new)**2).idxmin()]
+            
+            f_new = beam_fitness(x_new, y_new, z_new,
+                                 nearest['Force'], nearest['Material_Density'], nearest['E'],
+                                 nearest['Max_Stress'], nearest['Max_Deflection'])
+            
+            if f_new < fitness[i, j]:
+                new_cells[i, j] = [x_new, y_new, z_new]
+                fitness[i, j] = f_new
+                
+                # Update global best
+                if f_new < best_fit:
+                    best_fit = f_new
+                    best_pos = [x_new, y_new, z_new]
+    
+    cells = new_cells
+
+# ---------------------------
+# Output
+# ---------------------------
+print("✅ Engineering Design Optimization using PCA")
+print(f"Best Design Parameters: Length = {best_pos[0]:.3f} m, Width = {best_pos[1]:.3f} m, Thickness = {best_pos[2]:.3f} m")
+print(f"Minimum Design Cost (Fitness): {best_fit:.3f}")
